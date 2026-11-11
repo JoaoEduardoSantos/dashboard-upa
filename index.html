@@ -1258,6 +1258,27 @@
         margin-top: 2px;
       }
 
+      .historico-medias-pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 22px;
+        align-items: start;
+      }
+
+      .historico-medias-pane h2 {
+        margin: 0 0 14px;
+      }
+
+      .historico-medias-pane table {
+        min-width: 0;
+      }
+
+      @media (max-width: 900px) {
+        .historico-medias-pair {
+          grid-template-columns: 1fr;
+        }
+      }
+
       .plantao-nav-wrap h2 {
         margin: 0 0 18px;
         font-family: var(--font-text);
@@ -2559,6 +2580,32 @@
               </thead>
               <tbody id="historicoTopPlantaoBody"></tbody>
             </table>
+          </div>
+        </div>
+        <div class="historico-rank-card glass">
+          <div class="historico-medias-pair">
+            <div class="historico-medias-pane">
+              <h2>Top 10 médias — diurno</h2>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr id="historicoTopMediaDiurnoHead"></tr>
+                  </thead>
+                  <tbody id="historicoTopMediaDiurnoBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="historico-medias-pane">
+              <h2>Top 10 médias — noturno</h2>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr id="historicoTopMediaNoturnoHead"></tr>
+                  </thead>
+                  <tbody id="historicoTopMediaNoturnoBody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -4428,6 +4475,7 @@
         { id: "jun26", file: "35 jun 26.xls", label: "Jun/2026" },
         { id: "jul26", file: "36 jul 26.xls", label: "Jul/2026" },
         { id: "ago26", file: "37 ago 26.xls", label: "Ago/2026" },
+        { id: "set26", file: "38 set 26.xls", label: "Set/2026" },
       ];
       const HISTORICO_COMPLETO_ID = "__completo__";
       const HISTORICO_TOP_MEDICO_KEY = "dashboard-plantoes:historicoTopMedico:v1";
@@ -4674,6 +4722,18 @@
         historicoTopPlantaoBody: document.getElementById(
           "historicoTopPlantaoBody",
         ),
+        historicoTopMediaDiurnoHead: document.getElementById(
+          "historicoTopMediaDiurnoHead",
+        ),
+        historicoTopMediaDiurnoBody: document.getElementById(
+          "historicoTopMediaDiurnoBody",
+        ),
+        historicoTopMediaNoturnoHead: document.getElementById(
+          "historicoTopMediaNoturnoHead",
+        ),
+        historicoTopMediaNoturnoBody: document.getElementById(
+          "historicoTopMediaNoturnoBody",
+        ),
         indicadoresFooter: document.getElementById("indicadoresFooter"),
       };
 
@@ -4715,6 +4775,12 @@
         ["am", "Amarelas"],
         ["lv", "Laranja + Vermelho"],
         ["pontos", "Pontos"],
+      ];
+      const TABLE_COLUMNS_MEDIAS_TURNO = [
+        ["medico", "Médico"],
+        ["plantoes", "Plantões"],
+        ["mediaPacientes", "Média de pacientes"],
+        ["mediaPontos", "Média de pontos"],
       ];
 
       function formatPlantaoTurnoLabel(p) {
@@ -4850,6 +4916,70 @@
           .slice(0, HISTORICO_TOP_N);
       }
 
+      function buildHistoricoTopMediasTurno(plantoes, turno) {
+        const want = turno === "noturno" ? "noturno" : "diurno";
+        const byMed = new Map();
+        for (const p of plantoes || []) {
+          const pTurno = p.plantao === "noturno" ? "noturno" : "diurno";
+          if (pTurno !== want) continue;
+          for (const r of p.rows || []) {
+            if (isExcludedFromHistoricoTopRankings(r.medico)) continue;
+            const geral = r.geral || 0;
+            if (geral < HISTORICO_MEDIA_MIN_PACIENTES) continue;
+            const key = r.medico;
+            if (!byMed.has(key)) {
+              byMed.set(key, {
+                medico: key,
+                pacientesSum: 0,
+                pontosSum: 0,
+                count: 0,
+              });
+            }
+            const acc = byMed.get(key);
+            acc.pacientesSum += geral;
+            acc.pontosSum += r.pontos || 0;
+            acc.count += 1;
+          }
+        }
+        return [...byMed.values()]
+          .filter((r) => r.count > 0)
+          .map((r) => ({
+            medico: r.medico,
+            plantoes: r.count,
+            mediaPacientes: r.pacientesSum / r.count,
+            mediaPontos: r.pontosSum / r.count,
+          }))
+          .sort(
+            (a, b) =>
+              b.mediaPontos - a.mediaPontos ||
+              b.mediaPacientes - a.mediaPacientes,
+          )
+          .slice(0, HISTORICO_TOP_N);
+      }
+
+      function historicoMediasTurnoRowHtml(r, highlight = false) {
+        return `
+    <tr class="${highlight ? "highlight" : ""}">
+      <td>${tableMedicoCellHtml(r.medico)}</td>
+      <td>${formatNumber(r.plantoes)}</td>
+      <td class="table-num-emphasis">${formatHistoricoMediaValor(r.mediaPacientes)}</td>
+      <td class="table-num-emphasis"><strong>${formatHistoricoMediaValor(r.mediaPontos)}</strong></td>
+    </tr>`;
+      }
+
+      function fillHistoricoMediasTurnoTable(headEl, bodyEl, rows) {
+        if (headEl) {
+          headEl.innerHTML = TABLE_COLUMNS_MEDIAS_TURNO.map(
+            ([key, label]) => `<th data-col="${key}">${label}</th>`,
+          ).join("");
+        }
+        if (!bodyEl) return;
+        const topMed = rows[0]?.medico || null;
+        bodyEl.innerHTML = rows
+          .map((r) => historicoMediasTurnoRowHtml(r, r.medico === topMed))
+          .join("");
+      }
+
       function formatHistoricoMediaValor(v) {
         if (v == null || Number.isNaN(v)) return "-";
         return formatDecimal(v, 1);
@@ -4901,6 +5031,10 @@
         if (!show) {
           if (el.historicoTopAtendBody) el.historicoTopAtendBody.innerHTML = "";
           if (el.historicoTopPlantaoBody) el.historicoTopPlantaoBody.innerHTML = "";
+          if (el.historicoTopMediaDiurnoBody)
+            el.historicoTopMediaDiurnoBody.innerHTML = "";
+          if (el.historicoTopMediaNoturnoBody)
+            el.historicoTopMediaNoturnoBody.innerHTML = "";
           return;
         }
 
@@ -4940,6 +5074,17 @@
             )
             .join("");
         }
+
+        fillHistoricoMediasTurnoTable(
+          el.historicoTopMediaDiurnoHead,
+          el.historicoTopMediaDiurnoBody,
+          buildHistoricoTopMediasTurno(state.plantoes, "diurno"),
+        );
+        fillHistoricoMediasTurnoTable(
+          el.historicoTopMediaNoturnoHead,
+          el.historicoTopMediaNoturnoBody,
+          buildHistoricoTopMediasTurno(state.plantoes, "noturno"),
+        );
       }
 
       function escapeHtml(s) {
@@ -5403,6 +5548,13 @@
               "NATHAN PARREIRAS DINIZ",
             ],
           ],
+          [
+            "renata",
+            [
+              "dra. RENATA",
+              "RENATA CARVALHO FONSECA",
+            ],
+          ],
         ];
         for (const [slug, nomes] of registros) {
           for (const nome of nomes) map.set(normalizarNomeMedico(nome), slug);
@@ -5451,6 +5603,7 @@
         paulo: { scale: 0.92, x: 0, y: 2 },
         pedrochaves: { scale: 1.15, x: 0, y: -2 },
         nathan: { scale: 0.87, x: 0, y: 2.5 },
+        renata: { scale: 1.16, x: 0, y: -1 },
       };
 
       const AVATAR_AJUSTE_PADRAO = { scale: 1, x: 0, y: 0 };
